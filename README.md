@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # STAR ELECTRICAL HAZARIBAGH
 
 An offline-first billing and inventory application. It uses only the browser's IndexedDB and LocalStorage. No server, cloud database, paid API, or PDF upload is used.
@@ -26,3 +27,6 @@ Open the local address Vite prints (normally `http://localhost:5173`). To create
 - Bill creation with product search, custom lines, line and overall discounts, mixed GST, additional charges, round-off, partial payments, and stock deduction.
 - A4 PDF invoice download with invoice details, tax totals, Indian amount-in-words, optional logo/signature, and multi-page item tables.
 - Optional basic local sales metadata plus complete JSON export/restore.
+=======
+# starelectrical-billbook
+>>>>>>> 32e5bcef1255fa5e0f0160042ecd7640a9ac5aa0
