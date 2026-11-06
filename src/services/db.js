@@ -1,6 +1,7 @@
 import { openDB } from 'idb'
 import defaultLogo from '../assets/star-electrical-logo.jpg'
 import defaultSignature from '../assets/authorised-signature-transparent.png'
+import { cloudEnabled, getCloudUser, supabase } from './supabase'
 
 const DB_NAME = 'star-electrical-local'
 const STORES = ['products', 'customers', 'invoices']
@@ -11,14 +12,58 @@ const db = () => openDB(DB_NAME, 1, {
   },
 })
 
-export const getAll = async (store) => (await db()).getAll(store)
-export const save = async (store, value) => (await db()).put(store, value)
-export const remove = async (store, id) => (await db()).delete(store, id)
+const localGetAll = async store => (await db()).getAll(store)
+const localSave = async (store, value) => (await db()).put(store, value)
+const localRemove = async (store, id) => (await db()).delete(store, id)
+const cloudUser = async () => cloudEnabled ? getCloudUser() : null
+const cloudError = (error, action) => { if (error) throw new Error(`Cloud ${action} failed: ${error.message}`) }
+
+export const getAll = async (store) => {
+  const user = await cloudUser()
+  if (!user) return localGetAll(store)
+  const { data, error } = await supabase.from('shop_records').select('payload').eq('store', store).order('updated_at', { ascending: false })
+  cloudError(error, 'load')
+  return data.map(row => row.payload)
+}
+export const save = async (store, value) => {
+  const user = await cloudUser()
+  if (!user) return localSave(store, value)
+  const { error } = await supabase.from('shop_records').upsert({ owner_id: user.id, store, record_id: value.id, payload: value, updated_at: new Date().toISOString() }, { onConflict: 'owner_id,store,record_id' })
+  cloudError(error, 'save')
+}
+export const remove = async (store, id) => {
+  const user = await cloudUser()
+  if (!user) return localRemove(store, id)
+  const { error } = await supabase.from('shop_records').delete().eq('store', store).eq('record_id', id)
+  cloudError(error, 'delete')
+}
 export const replaceAll = async (store, values) => {
+  const user = await cloudUser()
+  if (user) {
+    const { error: removeError } = await supabase.from('shop_records').delete().eq('store', store)
+    cloudError(removeError, 'replace')
+    if (values.length) {
+      const { error } = await supabase.from('shop_records').insert(values.map(value => ({ owner_id: user.id, store, record_id: value.id, payload: value })))
+      cloudError(error, 'replace')
+    }
+    return
+  }
   const database = await db(); const tx = database.transaction(store, 'readwrite')
   await tx.store.clear(); for (const value of values) await tx.store.put(value); await tx.done
 }
 export const clearAll = async () => { const database = await db(); const tx = database.transaction(STORES, 'readwrite'); for (const s of STORES) await tx.objectStore(s).clear(); await tx.done }
+
+export const migrateLocalDataToCloud = async () => {
+  const user = await cloudUser()
+  if (!user) throw new Error('Sign in before uploading local data.')
+  for (const store of STORES) {
+    const values = await localGetAll(store)
+    if (values.length) {
+      const { error } = await supabase.from('shop_records').upsert(values.map(value => ({ owner_id: user.id, store, record_id: value.id, payload: value, updated_at: new Date().toISOString() })), { onConflict: 'owner_id,store,record_id' })
+      cloudError(error, 'migration')
+    }
+  }
+}
 
 export const defaults = {
   name: 'STAR ELECTRICAL HAZARIBAGH', address: 'Opp. Patna House, Pugmil, Hazaribagh, Jharkhand, 825301', mobile: '6207295457',

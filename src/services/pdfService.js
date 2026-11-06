@@ -23,11 +23,24 @@ export async function downloadInvoice(bill, settings, totals) {
   doc.setFont('helvetica','normal'); doc.text(bill.customer.mobile ? `Mobile:  ${bill.customer.mobile}` : '', left, 88); if (bill.customer.address) doc.text(bill.customer.address, left, 94, { maxWidth: 100 })
   const tableY = bill.customer.address ? 101 : 94
   autoTable(doc,{ startY:tableY, margin:{left,right:12}, head:[['ITEMS','QTY.','RATE','AMOUNT']], body:bill.items.map(x=>[x.name,`${Number(x.quantity).toFixed(2).replace(/\.00$/,'')} ${x.unit}`,Number(x.rate).toFixed(2).replace(/\.00$/,''),Number(x.quantity||0)*Number(x.rate||0)*(1-Number(x.discount||0)/100)]), theme:'plain', headStyles:{fillColor:[255,255,255],textColor:[15,15,15],fontStyle:'bold',lineWidth:.5,lineColor:[0,0,0],fontSize:9,cellPadding:3}, styles:{fontSize:8.5,cellPadding:3,lineColor:[220,220,220],lineWidth:.2}, columnStyles:{0:{cellWidth:94},1:{cellWidth:33,halign:'left'},2:{cellWidth:28,halign:'right'},3:{cellWidth:31,halign:'right'}}, didDrawCell(data){ if (data.section === 'head' && data.row.index === 0) { doc.setDrawColor(0); doc.setLineWidth(.5); doc.line(left, data.cell.y, right, data.cell.y); doc.line(left, data.cell.y+data.cell.height, right, data.cell.y+data.cell.height) } } })
-  let y = Math.max(doc.lastAutoTable.finalY + 30, 165); doc.setDrawColor(0); doc.setLineWidth(.45); doc.line(left,y,right,y); y+=7
+  const totalX=134
+  const amountLines=[['Discount',-totals.discount],['GST',totals.gst],['Additional charges',totals.additional],['Round off',totals.rounding],['Total Amount',totals.grand],['Received Amount',bill.received],['Balance Due',Math.max(0, totals.grand-Number(bill.received||0))]].filter(([_,value], index) => index >= 4 || Math.abs(Number(value)) >= .005)
+  // Keep the whole closing section together. This protects the signature and
+  // totals when a long item table reaches the printable bottom of a page.
+  const footerHeight = 82 + amountLines.length * 6
+  let footerTop = Math.max(doc.lastAutoTable.finalY + 20, 135)
+  if (footerTop + footerHeight > 285) {
+    doc.addPage()
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text(settings.name, left, 16)
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.text(`Invoice ${bill.invoiceNo} - Summary`, right, 16, { align:'right' })
+    doc.setDrawColor(0); doc.setLineWidth(.45); doc.line(left, 21, right, 21)
+    footerTop = 32
+  }
+  let y = footerTop; doc.setDrawColor(0); doc.setLineWidth(.45); doc.line(left,y,right,y); y+=7
   doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.text('SUBTOTAL', 14, y); doc.text(`${bill.items.reduce((n,x)=>n+Number(x.quantity||0),0).toFixed(2).replace(/\.00$/,'')}`, 118, y, {align:'right'}); doc.text(money(totals.subtotal), right-2, y, {align:'right'}); y+=5; doc.line(left,y,right,y)
-  const totalX=134; y+=9; doc.setFontSize(8.5); const amountLines=[['Discount',-totals.discount],['GST',totals.gst],['Additional charges',totals.additional],['Round off',totals.rounding],['Total Amount',totals.grand],['Received Amount',bill.received],['Balance Due',Math.max(0, totals.grand-Number(bill.received||0))]]
-  amountLines.forEach(([label,value], index)=>{ if(index<4 && Math.abs(Number(value))<.005)return; doc.setFont('helvetica', index===4?'bold':'normal'); doc.text(label, totalX+31, y, {align:'right'}); doc.text(money(value), right-2, y,{align:'right'}); doc.setDrawColor(150); doc.setLineWidth(.15); doc.line(totalX,y+3,right,y+3); y+=6 })
-  const termsY = y-35; doc.setFont('helvetica','bold'); doc.text('TERMS AND CONDITIONS', left+2, termsY); doc.setFont('helvetica','normal'); doc.text(`1. ${settings.terms}`, left+2, termsY+6, {maxWidth:112})
+  const termsY = y + 16; y+=9; doc.setFontSize(8.5)
+  amountLines.forEach(([label,value], index)=>{ doc.setFont('helvetica', label==='Total Amount'?'bold':'normal'); doc.text(label, totalX+31, y, {align:'right'}); doc.text(money(value), right-2, y,{align:'right'}); doc.setDrawColor(150); doc.setLineWidth(.15); doc.line(totalX,y+3,right,y+3); y+=6 })
+  doc.setFont('helvetica','bold'); doc.text('TERMS AND CONDITIONS', left+2, termsY); doc.setFont('helvetica','normal'); doc.text(`1. ${settings.terms}`, left+2, termsY+6, {maxWidth:112})
   y+=5; doc.setFont('helvetica','bold'); doc.text('Total Amount (in words)',right-2,y,{align:'right'}); doc.setFont('helvetica','normal'); doc.text(rupeesInWords(totals.grand),right-2,y+6,{align:'right',maxWidth:118})
   if (signature) { try { doc.addImage(signature,imageFormat(signature),160,y+17,30,16) } catch {} } doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text(`AUTHORISED SIGNATORY FOR`,right-2,y+43,{align:'right'}); doc.text(settings.name,right-2,y+48,{align:'right'})
   doc.save(`${settings.name.replace(/\s+/g,'_')}_Invoice_${bill.invoiceNo}.pdf`)
