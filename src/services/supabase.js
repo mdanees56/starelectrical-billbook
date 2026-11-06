@@ -27,12 +27,17 @@ export async function signUpForCloud(email, password) {
 export async function signOutFromCloud() {
   if (supabase) await supabase.auth.signOut()
 }
+export async function sendPasswordReset(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/login` })
+  if (error) throw error
+}
 
 export async function subscribeToCloudChanges(callback) {
   const user = await getCloudUser()
   if (!supabase || !user) return () => {}
-  const channel = supabase.channel(`shop-records-${user.id}`).on('postgres_changes', {
-    event: '*', schema: 'public', table: 'shop_records', filter: `owner_id=eq.${user.id}`,
-  }, callback).subscribe()
+  const channel = supabase.channel(`shop-data-${user.id}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: `owner_id=eq.${user.id}` }, callback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `owner_id=eq.${user.id}` }, callback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices', filter: `owner_id=eq.${user.id}` }, callback).subscribe()
   return () => supabase.removeChannel(channel)
 }

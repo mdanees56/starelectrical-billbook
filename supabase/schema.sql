@@ -1,32 +1,15 @@
--- STAR ELECTRICAL HAZARIBAGH - shared cloud storage
--- Run this once in Supabase Dashboard > SQL Editor.
-
-create table if not exists public.shop_records (
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  store text not null check (store in ('products', 'customers', 'invoices')),
-  record_id uuid not null,
-  payload jsonb not null,
-  updated_at timestamptz not null default now(),
-  primary key (owner_id, store, record_id)
-);
-
-alter table public.shop_records enable row level security;
-alter table public.shop_records replica identity full;
-revoke all on public.shop_records from anon;
-grant select, insert, update, delete on public.shop_records to authenticated;
-
-drop policy if exists "shop owner can read records" on public.shop_records;
-drop policy if exists "shop owner can add records" on public.shop_records;
-drop policy if exists "shop owner can update records" on public.shop_records;
-drop policy if exists "shop owner can delete records" on public.shop_records;
-
-create policy "shop owner can read records" on public.shop_records for select to authenticated using ((select auth.uid()) = owner_id);
-create policy "shop owner can add records" on public.shop_records for insert to authenticated with check ((select auth.uid()) = owner_id);
-create policy "shop owner can update records" on public.shop_records for update to authenticated using ((select auth.uid()) = owner_id) with check ((select auth.uid()) = owner_id);
-create policy "shop owner can delete records" on public.shop_records for delete to authenticated using ((select auth.uid()) = owner_id);
-
-do $$ begin
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'shop_records') then
-    alter publication supabase_realtime add table public.shop_records;
-  end if;
-end $$;
+-- Run once in Supabase SQL Editor. Secure relational storage for one shop account.
+create extension if not exists pgcrypto;
+create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, created_at timestamptz not null default now());
+create table if not exists public.products (id uuid primary key default gen_random_uuid(),owner_id uuid not null references auth.users(id) on delete cascade,name text not null check(char_length(trim(name))>0),sku text,category text,brand text,unit text not null default 'PCS',purchase_price numeric not null default 0 check(purchase_price>=0),selling_price numeric not null check(selling_price>=0),gst numeric not null default 0 check(gst between 0 and 100),stock numeric not null default 0 check(stock>=0),low_stock numeric not null default 5 check(low_stock>=0),description text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(owner_id,sku));
+create unique index if not exists products_owner_name_unique on public.products(owner_id,lower(name)); create index if not exists products_owner_idx on public.products(owner_id);
+create table if not exists public.customers (id uuid primary key default gen_random_uuid(),owner_id uuid not null references auth.users(id) on delete cascade,name text not null check(char_length(trim(name))>0),mobile text,address text,created_at timestamptz not null default now(),updated_at timestamptz not null default now()); create index if not exists customers_owner_idx on public.customers(owner_id);
+create table if not exists public.shop_settings (owner_id uuid primary key references auth.users(id) on delete cascade,payload jsonb not null default '{}'::jsonb,updated_at timestamptz not null default now());
+create table if not exists public.invoices (id uuid primary key default gen_random_uuid(),owner_id uuid not null references auth.users(id) on delete cascade,invoice_no text not null,invoice_date date not null default current_date,customer_name text,payment_status text not null default 'Paid',total numeric not null check(total>=0),created_at timestamptz not null default now(),unique(owner_id,invoice_no));
+create table if not exists public.invoice_items (id uuid primary key default gen_random_uuid(),invoice_id uuid not null references public.invoices(id) on delete cascade,product_id uuid references public.products(id) on delete set null,name text not null,sku text,unit text,quantity numeric not null check(quantity>0),rate numeric not null check(rate>=0),gst numeric not null default 0,discount numeric not null default 0,amount numeric not null default 0); create index if not exists invoices_owner_date_idx on public.invoices(owner_id,created_at desc);
+alter table public.profiles enable row level security; alter table public.products enable row level security; alter table public.customers enable row level security; alter table public.shop_settings enable row level security; alter table public.invoices enable row level security; alter table public.invoice_items enable row level security;
+revoke all on public.profiles,public.products,public.customers,public.shop_settings,public.invoices,public.invoice_items from anon; grant select,insert,update,delete on public.profiles,public.products,public.customers,public.shop_settings,public.invoices,public.invoice_items to authenticated;
+drop policy if exists owner_profile on public.profiles; create policy owner_profile on public.profiles for all to authenticated using ((select auth.uid())=id) with check ((select auth.uid())=id); do $$ declare t text; begin foreach t in array array['products','customers','shop_settings','invoices'] loop execute format('drop policy if exists owner_all on public.%I',t); execute format('create policy owner_all on public.%I for all to authenticated using ((select auth.uid())=owner_id) with check ((select auth.uid())=owner_id)',t); end loop; end $$;
+drop policy if exists invoice_owner_items on public.invoice_items; create policy invoice_owner_items on public.invoice_items for all to authenticated using(exists(select 1 from public.invoices i where i.id=invoice_id and i.owner_id=(select auth.uid()))) with check(exists(select 1 from public.invoices i where i.id=invoice_id and i.owner_id=(select auth.uid())));
+create or replace function public.finalize_invoice(p_invoice jsonb,p_items jsonb) returns uuid language plpgsql security invoker as $$ declare o uuid:=auth.uid(); inv uuid; item jsonb; current_stock numeric; qty numeric; begin if o is null then raise exception 'Authentication required'; end if; insert into public.invoices(owner_id,invoice_no,invoice_date,customer_name,payment_status,total) values(o,p_invoice->>'invoiceNo',coalesce((p_invoice->>'date')::date,current_date),nullif(p_invoice->>'customerName',''),coalesce(p_invoice->>'paymentStatus','Paid'),coalesce((p_invoice->>'total')::numeric,0)) returning id into inv; for item in select * from jsonb_array_elements(p_items) loop qty:=(item->>'quantity')::numeric; if nullif(item->>'productId','') is not null then select stock into current_stock from public.products where id=(item->>'productId')::uuid and owner_id=o for update; if current_stock is null then raise exception 'Product no longer exists'; end if; if current_stock<qty then raise exception 'Insufficient stock for %',item->>'name'; end if; update public.products set stock=stock-qty,updated_at=now() where id=(item->>'productId')::uuid and owner_id=o; end if; insert into public.invoice_items(invoice_id,product_id,name,sku,unit,quantity,rate,gst,discount,amount) values(inv,nullif(item->>'productId','')::uuid,item->>'name',item->>'sku',item->>'unit',qty,(item->>'rate')::numeric,coalesce((item->>'gst')::numeric,0),coalesce((item->>'discount')::numeric,0),coalesce((item->>'amount')::numeric,qty*(item->>'rate')::numeric)); end loop; return inv; end $$; grant execute on function public.finalize_invoice(jsonb,jsonb) to authenticated;
+alter table public.products replica identity full; alter table public.customers replica identity full; alter table public.invoices replica identity full; do $$ begin alter publication supabase_realtime add table public.products,public.customers,public.invoices; exception when duplicate_object then null; end $$;
