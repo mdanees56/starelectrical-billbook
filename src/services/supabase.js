@@ -38,6 +38,7 @@ export async function subscribeToCloudChanges(callback) {
   const channel = supabase.channel(`shop-data-${user.id}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: `owner_id=eq.${user.id}` }, callback)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `owner_id=eq.${user.id}` }, callback)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices', filter: `owner_id=eq.${user.id}` }, callback).subscribe()
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices', filter: `owner_id=eq.${user.id}` }, callback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_ledger', filter: `owner_id=eq.${user.id}` }, callback).subscribe()
   return () => supabase.removeChannel(channel)
 }
