@@ -1,7 +1,7 @@
 <<<<<<< HEAD
 # STAR ELECTRICAL HAZARIBAGH
 
-An offline-first billing and inventory application. It uses only the browser's IndexedDB and LocalStorage. No server, cloud database, paid API, or PDF upload is used.
+An billing and inventory application. It uses only the browser's IndexedDB and LocalStorage. No server, cloud database, paid API, or PDF upload is used.
 
 ## Run locally
 
