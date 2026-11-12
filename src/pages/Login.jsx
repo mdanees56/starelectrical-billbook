@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import { Eye, EyeOff } from 'lucide-react'
 import { cloudEnabled, sendPasswordReset, signInToCloud, signUpForCloud } from '../services/supabase'
+import './Login.css'
 
 export default function Login({ settings }) {
   const [pin, setPin] = useState('')
+  const [showPin, setShowPin] = useState(false)
   const navigate = useNavigate()
 
   if (cloudEnabled) return <CloudLogin settings={settings} />
@@ -28,15 +31,26 @@ export default function Login({ settings }) {
         <form onSubmit={submit}>
           <label>
             Enter local PIN
-            <input
-              autoFocus
-              type="password"
-              inputMode="numeric"
-              maxLength="8"
-              value={pin}
-              onChange={event => setPin(event.target.value)}
-              required
-            />
+            <span className="password-field">
+              <input
+                autoFocus
+                type={showPin ? 'text' : 'password'}
+                inputMode="numeric"
+                maxLength="8"
+                value={pin}
+                onChange={event => setPin(event.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showPin ? 'Hide PIN' : 'Show PIN'}
+                aria-pressed={showPin}
+                onClick={() => setShowPin(visible => !visible)}
+              >
+                {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </span>
           </label>
           <button>Unlock shop</button>
         </form>
@@ -48,6 +62,7 @@ export default function Login({ settings }) {
 function CloudLogin({ settings }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [creating, setCreating] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -101,13 +116,24 @@ function CloudLogin({ settings }) {
           </label>
           <label>
             Password
-            <input
-              type="password"
-              minLength="6"
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-              required
-            />
+            <span className="password-field">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                minLength="6"
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword(visible => !visible)}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </span>
           </label>
           {message && <p className="login-message">{message}</p>}
           <button disabled={busy}>
