@@ -1,6 +1,6 @@
-import {useState} from 'react'
+import {useEffect, useState} from 'react'
 import {Download, Pencil, Plus, Search, Trash2} from 'lucide-react'
-import {normalizeLabel, remove, save} from '../services/db'
+import {getLookups, normalizeLabel, remove, save} from '../services/db'
 import {emptyProduct, money} from '../utils/appHelpers'
 import {Empty, Modal} from '../components/ui'
 
@@ -106,6 +106,24 @@ export default function Products({api}) {
 function ProductModal({product, products, close, done, notify}) {
     const [form,
         setForm] = useState(product);
+    const [lookups, setLookups] = useState({brands: [], categories: []});
+    const [newLookup, setNewLookup] = useState({brand: false, category: false});
+    useEffect(() => {
+        let active = true;
+        Promise.all([getLookups('brands'), getLookups('categories')])
+            .then(([brands, categories]) => {
+                if (active) {
+                    setLookups({
+                        brands: [...new Set([...brands.map(item => item.name), ...products.map(item => item.brand).filter(Boolean)])],
+                        categories: [...new Set([...categories.map(item => item.name), ...products.map(item => item.category).filter(Boolean)])]
+                    })
+                }
+            })
+            .catch(error => alert(error.message));
+        return () => {
+            active = false;
+        };
+    }, [products]);
     const field = (label, key, type = 'text') => <label>{label}<input
         type={type}
         value={form[key] ?? ''}
@@ -113,6 +131,32 @@ function ProductModal({product, products, close, done, notify}) {
         ...form,
         [key]: e.target.value
     })}/></label>;
+    const lookupField = (label, key, options) => <label>{label}{newLookup[key]
+        ? <>
+            <input
+                autoFocus
+                placeholder={`Enter new ${label.toLowerCase()}`}
+                value={form[key] ?? ''}
+                onChange={e => setForm({...form, [key]: e.target.value})}/>
+            <button type="button" className="secondary" onClick={() => {
+                setNewLookup({...newLookup, [key]: false});
+                setForm({...form, [key]: ''});
+            }}>Choose saved {label.toLowerCase()}</button>
+        </>
+        : <select
+            value={form[key] ?? ''}
+            onChange={e => {
+                if (e.target.value === '__new__') {
+                    setNewLookup({...newLookup, [key]: true});
+                    setForm({...form, [key]: ''});
+                } else {
+                    setForm({...form, [key]: e.target.value});
+                }
+            }}>
+            <option value="">Select {label.toLowerCase()}</option>
+            {options.map(option => <option key={option} value={option}>{option}</option>)}
+            <option value="__new__">+ Add new {label.toLowerCase()}</option>
+        </select>}</label>;
     const submit = async e => {
         e.preventDefault();
         if (!form.name.trim()) 
@@ -122,7 +166,8 @@ function ProductModal({product, products, close, done, notify}) {
         const dup = products.find(p => p.id !== form.id && (p.name.trim().toLowerCase() === form.name.trim().toLowerCase() || (form.sku && p.sku.toLowerCase() === form.sku.toLowerCase())));
         if (dup) 
             return alert('A product with that name or product code already exists.');
-        await save('products', {
+        try {
+            await save('products', {
             ...form,
             id: form.id || crypto.randomUUID(),
             name: form
@@ -137,6 +182,9 @@ function ProductModal({product, products, close, done, notify}) {
         await done();
         notify('Product saved.');
         close()
+        } catch (error) {
+            alert(error.message);
+        }
     };
     return <Modal
         title={product.id
@@ -144,8 +192,8 @@ function ProductModal({product, products, close, done, notify}) {
         : 'Add product'}
         close={close}>
         <form className="form-grid" onSubmit={submit}>{field('Product name *', 'name')} {field('Product code / SKU', 'sku')}
-            {field('Category', 'category')}
-            {field('Brand', 'brand')}<label>Unit<select
+            {lookupField('Category', 'category', lookups.categories)}
+            {lookupField('Brand', 'brand', lookups.brands)}<label>Unit<select
                 value={form.unit}
                 onChange={e => setForm({
         ...form,
