@@ -66,7 +66,8 @@ export default function Products({api}) {
                         <th>Product</th>
                         <th>Code</th>
                         <th>Category</th>
-                        <th>Price</th>
+                        <th>Selling price</th>
+                        <th>Purchase price</th>
                         <th>Stock</th>
                         <th></th>
                     </tr>
@@ -82,6 +83,7 @@ export default function Products({api}) {
                         <td>{money(p.sellingPrice)}
                             <small>GST {p.gst || 0}%</small>
                         </td>
+                        <td>{money(p.purchasePrice)}</td>
                         <td>
                             <span
                                 className={Number(p.stock) <= Number(p.lowStock ?? api.settings.lowStockThreshold)
@@ -93,7 +95,7 @@ export default function Products({api}) {
                             <button onClick={() => erase(p)} aria-label="Delete"><Trash2 size={16}/></button>
                         </td>
                     </tr>)}{!filtered.length && <tr>
-                        <td colSpan="6"><Empty text="No products match the search."/></td>
+                        <td colSpan="7"><Empty text="No products match the search."/></td>
                     </tr>}</tbody>
             </table>
         </div>{editing && <ProductModal
